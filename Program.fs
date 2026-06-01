@@ -4,8 +4,32 @@ open System
 open System.Threading
 open QuoridorGame.Core
 
-let runGame () =
+[<EntryPoint>]
+let main argv =
     Console.OutputEncoding <- System.Text.Encoding.UTF8
+    
+    Console.Clear()
+    printfn "===================================="
+    printfn "       WELCOME TO QUORIDOR          "
+    printfn "===================================="
+    printfn "Please select your AI opponent:"
+    printfn "1) MCTS AI"
+    printfn "2) Minimax AI"
+    printf "Enter choice (1 or 2): "
+    
+    let mutable aiChoice = ""
+    let mutable valid = false
+    while not valid do
+        aiChoice <- Console.ReadLine()
+        if aiChoice = "1" || aiChoice = "2" then valid <- true
+        else printf "Invalid choice. Please enter 1 or 2: "
+        
+    let aiChooseAction = 
+        if aiChoice = "1" then AI.chooseActionMCTS
+        else AI.chooseActionMinimax
+
+    let aiName = if aiChoice = "1" then "MCTS AI" else "Minimax AI"
+
     let initialState = GameInitializer.createInitialState()
 
     // The game loop now retains an active message context string option
@@ -41,21 +65,21 @@ let runGame () =
 
             | AI ->
                 // Print analyzing status directly at the bottom of the current frame
-                printf "🤖 AI is exploring deep futures... "
+                printf "🤖 %s is exploring deep futures... " aiName
                 Console.Out.Flush() 
                 
                 // Fetch the calculated action and the total MCTS iteration depth count
-                let aiAction, mctsDepth = AI.chooseAction state
+                let aiAction, metric = aiChooseAction state
                 
                 match aiAction with
                 | Move dir ->
-                    let decisionMsg = sprintf "🤖 AI analyzed %d timelines and decided to move: %A" mctsDepth dir
+                    let decisionMsg = sprintf "🤖 %s (metric: %d) decided to move: %A" aiName metric dir
                     match GameEngine.tryApplyAction state aiAction with
                     | Ok nextState -> gameLoop nextState (Some decisionMsg) 
                     | Error _      -> gameLoop state None
                 | PlaceWall (o, r, c) ->
                     let orientationStr = match o with | Horizontal -> "H" | Vertical -> "V"
-                    let decisionMsg = sprintf "🤖 AI analyzed %d timelines and placed Wall: %s %d %d" mctsDepth orientationStr r c
+                    let decisionMsg = sprintf "🤖 %s (metric: %d) placed Wall: %s %d %d" aiName metric orientationStr r c
                     match GameEngine.tryApplyAction state aiAction with
                     | Ok nextState -> gameLoop nextState (Some decisionMsg) 
                     | Error _      -> gameLoop state None

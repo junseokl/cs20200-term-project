@@ -97,29 +97,6 @@ module AI =
                     Ok nextState
                 else Error "Invalid wall"
 
-    let getOptimalPawnMoves (state: GameState) (player: PlayerType) : GameAction list =
-        let pos, oppPos, targetRow = 
-            match player with
-            | Human -> state.HumanPlayer.Position, state.AIPlayer.Position, 0
-            | AI -> state.AIPlayer.Position, state.HumanPlayer.Position, 8
-            
-        let dists = fastGetDistances targetRow state.Walls
-        let d = dists.[pos.Row * 9 + pos.Col]
-        if d = -1 then []
-        else
-            let dirs = [Up; Down; Left; Right; UpLeft; UpRight; DownLeft; DownRight]
-            let validMoves = 
-                dirs 
-                |> List.choose (fun dir ->
-                    match BoardLogic.getMoveDestination pos dir oppPos state.Walls with
-                    | Some dest -> Some (dir, dists.[dest.Row * 9 + dest.Col])
-                    | None -> None
-                )
-            if validMoves.IsEmpty then []
-            else
-                let minDist = validMoves |> List.map snd |> List.min
-                validMoves |> List.filter (fun (_, dist) -> dist = minDist) |> List.map (fun (dir, _) -> Move dir)
-
     let getShortestPathCoords (startPos: Position) (targetRow: int) (walls: Wall list) =
         let dist, prev = fastGetDistancesAndPrev targetRow walls
         let startIdx = startPos.Row * 9 + startPos.Col
@@ -164,56 +141,158 @@ module AI =
             | Vertical -> [ {Orientation=Vertical; Row=w.Row-2; Col=w.Col}; {Orientation=Vertical; Row=w.Row+2; Col=w.Col} ]
         ) |> List.filter (fun (w: Wall) -> w.Row >= 0 && w.Row <= 7 && w.Col >= 0 && w.Col <= 7)
 
-    let getProbableWalls (state: GameState) (player: PlayerType) : GameAction list =
-        let playerState = match player with | Human -> state.HumanPlayer | AI -> state.AIPlayer
-        if playerState.RemainingWalls <= 0 then []
-        else
-            let oppPos, oppTarget = 
-                match player with 
-                | Human -> state.AIPlayer.Position, 8 
-                | AI -> state.HumanPlayer.Position, 0
-                
-            let oppPath = getShortestPathCoords oppPos oppTarget state.Walls
-            let blockingWalls = generateWallsBlockingPath oppPath
-            let extensionWalls = getExtensionWalls state.Walls
-            
-            blockingWalls @ extensionWalls
-            |> List.distinct
-            |> List.filter (fun w -> not (state.Walls |> List.exists (fun ew -> BoardLogic.wallsIntersect ew w)))
-            |> List.filter (fun w -> fastIsValidWallPlacement w state)
-            |> List.map (fun w -> PlaceWall (w.Orientation, w.Row, w.Col))
-
-    let getExpansionActions (state: GameState) : GameAction list =
-        let current = state.CurrentTurn
+    let getCandidateActions (state: GameState) (player: PlayerType) : GameAction list =
+        let current = player
+        let opp = if current = Human then AI else Human
         let playerState = if current = Human then state.HumanPlayer else state.AIPlayer
         let oppState = if current = Human then state.AIPlayer else state.HumanPlayer
         
+        let targetRow = if current = Human then 0 else 8
+        let oppTargetRow = if current = Human then 8 else 0
+        
+        let dists = fastGetDistances targetRow state.Walls
+        let myDistBefore = dists.[playerState.Position.Row * 9 + playerState.Position.Col]
+        
         let allDirs = [Up; Down; Left; Right; UpLeft; UpRight; DownLeft; DownRight]
-        let normalMoves = 
+        // ONLY valid pawn moves that physically reduce distance to goal (STRICT FORWARD MOVEMENT, NO DANCING)
+        let optimalMoves = 
             allDirs |> List.choose (fun d -> 
                 match BoardLogic.getMoveDestination playerState.Position d oppState.Position state.Walls with
-                | Some _ -> Some (Move d) | None -> None)
-                
-        if oppState.RemainingWalls = 0 then
-            let optimalMoves = getOptimalPawnMoves state current
-            let oppTargetRow = if current = Human then 8 else 0
+                | Some dest -> 
+                    let dist = dists.[dest.Row * 9 + dest.Col]
+                    if dist < myDistBefore then Some (Move d) else None
+                | None -> None
+            )
+            
+        if playerState.RemainingWalls > 0 then
+            let oppPath = getShortestPathCoords oppState.Position oppTargetRow state.Walls
+            let blockingWalls = generateWallsBlockingPath oppPath
+            let extensionWalls = getExtensionWalls state.Walls
+            
+            let potentialWalls = blockingWalls @ extensionWalls |> List.distinct
             let oppDistBefore = (fastGetDistances oppTargetRow state.Walls).[oppState.Position.Row * 9 + oppState.Position.Col]
             
-            let walls = 
-                getProbableWalls state current
-                |> List.filter (function
-                    | PlaceWall(o, r, c) -> 
-                        let testWalls = {Orientation=o; Row=r; Col=c} :: state.Walls
-                        let oppDistAfter = (fastGetDistances oppTargetRow testWalls).[oppState.Position.Row * 9 + oppState.Position.Col]
-                        oppDistAfter > oppDistBefore
-                    | _ -> false
+            let validWalls = 
+                potentialWalls
+                |> List.filter (fun (w: Wall) -> w.Row >= 0 && w.Row <= 7 && w.Col >= 0 && w.Col <= 7)
+                |> List.filter (fun (w: Wall) -> not (state.Walls |> List.exists (fun ew -> BoardLogic.wallsIntersect ew w)))
+                |> List.choose (fun (w: Wall) ->
+                    let testWalls = w :: state.Walls
+                    let d1 = fastGetDistances 0 testWalls
+                    let d2 = fastGetDistances 8 testWalls
+                    let hDist = d1.[state.HumanPlayer.Position.Row * 9 + state.HumanPlayer.Position.Col]
+                    let aDist = d2.[state.AIPlayer.Position.Row * 9 + state.AIPlayer.Position.Col]
+                    
+                    if hDist <> -1 && aDist <> -1 then
+                        let oppDistAfter = if current = Human then aDist else hDist
+                        let myDistAfter = if current = Human then hDist else aDist
+                        
+                        let oppDiff = oppDistAfter - oppDistBefore
+                        let myDiff = myDistAfter - myDistBefore
+                        
+                        if oppDiff > 0 && oppDiff >= myDiff then 
+                            Some (PlaceWall(w.Orientation, w.Row, w.Col), oppDiff - myDiff)
+                        else None
+                    else None
                 )
-            let pawnActions = if optimalMoves.IsEmpty then normalMoves else optimalMoves
-            pawnActions @ walls
+                |> List.sortByDescending snd 
+                |> List.truncate 5 
+                |> List.map fst
+                
+            optimalMoves @ validWalls
         else
-            let walls = getProbableWalls state current
-            normalMoves @ walls
+            optimalMoves
 
+    // -----------------------------------------------------
+    // MINIMAX AI WITH ALPHA-BETA (Black / AIPlayer Slot)
+    // -----------------------------------------------------
+    let evaluateMinimax (state: GameState) =
+        match fastCheckWinner state with
+        | Some AI -> 10000.0
+        | Some Human -> -10000.0
+        | None ->
+            let aiDist = (fastGetDistances 8 state.Walls).[state.AIPlayer.Position.Row * 9 + state.AIPlayer.Position.Col]
+            let humanDist = (fastGetDistances 0 state.Walls).[state.HumanPlayer.Position.Row * 9 + state.HumanPlayer.Position.Col]
+            
+            let distScore = float (humanDist - aiDist)
+            let wallScore = float (state.AIPlayer.RemainingWalls - state.HumanPlayer.RemainingWalls) * 0.5
+            distScore * 10.0 + wallScore
+
+    let rec alphabeta (state: GameState) (depth: int) (alpha: float) (beta: float) (isMax: bool) (sw: Stopwatch) (timeLimit: int64) : float =
+        if depth = 0 || fastCheckWinner state |> Option.isSome || sw.ElapsedMilliseconds > timeLimit then
+            evaluateMinimax state
+        else
+            let actions = getCandidateActions state state.CurrentTurn
+            if isMax then
+                let mutable value = Double.NegativeInfinity
+                let mutable a = alpha
+                let mutable brk = false
+                for act in actions do
+                    if not brk && sw.ElapsedMilliseconds <= timeLimit then
+                        match fastApplyAction state act with
+                        | Ok nextState ->
+                            let v = alphabeta nextState (depth - 1) a beta false sw timeLimit
+                            value <- max value v
+                            a <- max a value
+                            if value >= beta then brk <- true
+                        | Error _ -> ()
+                value
+            else
+                let mutable value = Double.PositiveInfinity
+                let mutable b = beta
+                let mutable brk = false
+                for act in actions do
+                    if not brk && sw.ElapsedMilliseconds <= timeLimit then
+                        match fastApplyAction state act with
+                        | Ok nextState ->
+                            let v = alphabeta nextState (depth - 1) alpha b true sw timeLimit
+                            value <- min value v
+                            b <- min b value
+                            if value <= alpha then brk <- true
+                        | Error _ -> ()
+                value
+
+    let chooseActionMinimax (gameState: GameState) : GameAction * int =
+        let sw = Stopwatch.StartNew()
+        let timeLimitMs = 2800L 
+        
+        let actions = getCandidateActions gameState gameState.CurrentTurn
+        let mutable bestAction = if actions.Length > 0 then actions.Head else Move Down
+        let mutable maxDepth = 1
+        
+        let isMax = gameState.CurrentTurn = AI 
+        
+        try
+            while sw.ElapsedMilliseconds < timeLimitMs && maxDepth <= 15 do
+                let mutable bestVal = if isMax then Double.NegativeInfinity else Double.PositiveInfinity
+                let mutable currentBestAction = bestAction
+                
+                for act in actions do
+                    if sw.ElapsedMilliseconds < timeLimitMs then
+                        match fastApplyAction gameState act with
+                        | Ok nextState ->
+                            let v = alphabeta nextState (maxDepth - 1) Double.NegativeInfinity Double.PositiveInfinity (not isMax) sw timeLimitMs
+                            if isMax then
+                                if v > bestVal then
+                                    bestVal <- v
+                                    currentBestAction <- act
+                            else
+                                if v < bestVal then
+                                    bestVal <- v
+                                    currentBestAction <- act
+                        | Error _ -> ()
+                        
+                if sw.ElapsedMilliseconds < timeLimitMs then
+                    bestAction <- currentBestAction
+                maxDepth <- maxDepth + 1
+        with _ -> ()
+        
+        (bestAction, maxDepth - 1)
+
+
+    // -----------------------------------------------------
+    // MCTS AI WITH PAWN RACE HEURISTIC (White / HumanPlayer Slot)
+    // -----------------------------------------------------
     type MCTSNode = {
         State: GameState
         Action: GameAction option
@@ -229,7 +308,7 @@ module AI =
         Visits = 0; Wins = 0.0; UntriedActions = untried; Children = []
     }
 
-    let uctConst = 0.5 
+    let uctConst = 1.414
 
     let selectNode (node: MCTSNode) : MCTSNode =
         let rec loop n =
@@ -240,7 +319,7 @@ module AI =
                     n.Children |> List.maxBy (fun c -> 
                         let exploitation = c.Wins / float c.Visits
                         let uctScore = 
-                            if n.State.CurrentTurn = AI then exploitation + uctConst * sqrt (log totalVisits / float c.Visits)
+                            if n.State.CurrentTurn = Human then exploitation + uctConst * sqrt (log totalVisits / float c.Visits)
                             else (1.0 - exploitation) + uctConst * sqrt (log totalVisits / float c.Visits)
                         uctScore)
                 loop bestChild
@@ -252,48 +331,50 @@ module AI =
             node.UntriedActions <- node.UntriedActions.Tail
             match fastApplyAction node.State action with
             | Ok nextState ->
-                let untried = if fastCheckWinner nextState |> Option.isSome then [] else getExpansionActions nextState
+                let untried = if fastCheckWinner nextState |> Option.isSome then [] else getCandidateActions nextState nextState.CurrentTurn
                 let child = createNode nextState (Some action) (Some node) untried
                 node.Children <- child :: node.Children
                 child
             | Error _ -> node
         else node
 
-    let simulate (startNode: MCTSNode) : float =
+    let simulateMCTS (startNode: MCTSNode) : float =
         let rec loop state depth =
-            if depth > 100 then 0.5 
+            if depth > 40 then 0.5 
             else
                 match fastCheckWinner state with
-                | Some AI -> 1.0
-                | Some Human -> 0.0
+                | Some Human -> 1.0 
+                | Some AI -> 0.0
                 | None ->
                     let current = state.CurrentTurn
                     let playerState = if current = Human then state.HumanPlayer else state.AIPlayer
                     let oppState = if current = Human then state.AIPlayer else state.HumanPlayer
+                    let targetRow = if current = Human then 0 else 8
                     
-                    let r = rnd.NextDouble()
-                    let mutable chosenActionOpt = None
+                    let dists = fastGetDistances targetRow state.Walls
+                    let myDistBefore = dists.[playerState.Position.Row * 9 + playerState.Position.Col]
                     
-                    if r < 0.7 then
-                        let optimalMoves = getOptimalPawnMoves state current
-                        if optimalMoves.Length > 0 then chosenActionOpt <- Some (optimalMoves.[rnd.Next(optimalMoves.Length)])
-                            
-                    if chosenActionOpt.IsNone then
-                        if playerState.RemainingWalls > 0 && rnd.NextDouble() < 0.5 then
-                            let probWalls = getProbableWalls state current
-                            if probWalls.Length > 0 then chosenActionOpt <- Some (probWalls.[rnd.Next(probWalls.Length)])
-                            
-                    if chosenActionOpt.IsNone then
-                        let allDirs = [Up; Down; Left; Right; UpLeft; UpRight; DownLeft; DownRight]
-                        let validMoves = allDirs |> List.choose (fun d -> if BoardLogic.getMoveDestination playerState.Position d oppState.Position state.Walls |> Option.isSome then Some (Move d) else None)
-                        if validMoves.Length > 0 then chosenActionOpt <- Some (validMoves.[rnd.Next(validMoves.Length)])
-                            
-                    match chosenActionOpt with
-                    | Some act -> 
-                        match fastApplyAction state act with
-                        | Ok ns -> loop ns (depth + 1)
-                        | Error _ -> 0.5
-                    | None -> 0.5
+                    let allDirs = [Up; Down; Left; Right; UpLeft; UpRight; DownLeft; DownRight]
+                    let validMoves = 
+                        allDirs |> List.choose (fun d -> 
+                            match BoardLogic.getMoveDestination playerState.Position d oppState.Position state.Walls with
+                            | Some dest -> Some (Move d, dists.[dest.Row * 9 + dest.Col])
+                            | None -> None
+                        )
+                    
+                    let optimalMoves = validMoves |> List.filter (fun (_, d) -> d < myDistBefore) |> List.map fst
+                    let allValidMoves = validMoves |> List.map fst
+                    
+                    let chosen =
+                        if optimalMoves.Length > 0 && rnd.NextDouble() < 0.95 then
+                            optimalMoves.[rnd.Next(optimalMoves.Length)]
+                        elif allValidMoves.Length > 0 then
+                            allValidMoves.[rnd.Next(allValidMoves.Length)]
+                        else Move Down 
+                        
+                    match fastApplyAction state chosen with
+                    | Ok ns -> loop ns (depth + 1)
+                    | Error _ -> 0.5
         loop startNode.State 0
 
     let backpropagate (node: MCTSNode) (result: float) =
@@ -303,23 +384,26 @@ module AI =
             | None -> ()
         loop (Some node)
 
-    let chooseAction (gameState: GameState) : GameAction * int =
-        let rootUntried = getExpansionActions gameState
+    let chooseActionMCTS (gameState: GameState) : GameAction * int =
+        let rootUntried = getCandidateActions gameState gameState.CurrentTurn
         if rootUntried.Length = 0 then (Move Down, 0)
         elif rootUntried.Length = 1 then (rootUntried.Head, 0)
         else
             let root = createNode gameState None None rootUntried
             let sw = Stopwatch.StartNew()
             
-            let timeLimitMs = 3000L 
+            let timeLimitMs = 2800L 
             let mutable iterations = 0
             
             while sw.ElapsedMilliseconds < timeLimitMs do
                 let leaf = selectNode root
                 let expanded = expandNode leaf
-                let result = simulate expanded
+                let result = simulateMCTS expanded
                 backpropagate expanded result
                 iterations <- iterations + 1
                 
             let bestChild = root.Children |> List.maxBy (fun c -> c.Visits)
             (bestChild.Action.Value, iterations)
+
+    // DEFAULT ACTION FOR NORMAL PLAY
+    let chooseAction (gameState: GameState) = chooseActionMinimax gameState

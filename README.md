@@ -61,6 +61,12 @@ dotnet run
 
 ```
 
+Upon launching the game, you will be prompted to select your AI opponent:
+* **1) MCTS AI:** A fast, aggressive algorithm using Monte Carlo Tree Search with a specialized "Pawn Race" heuristic rollout.
+* **2) Minimax AI:** A deeply calculating algorithm utilizing Alpha-Beta Pruning and Iterative Deepening to foresee complex, multi-wall traps.
+
+> **Note on AI Selection (Beyond Proposal):** The option to choose between two different AI models was not originally included in the project proposal. It was added to provide players with varying challenges and distinct playstyles. The dual-AI system allows users to test their skills against both a fast, aggressive heuristic approach (MCTS) and a deep, calculating trap-setter (Minimax).
+
 The game window will clear automatically, display the commands index, and output the interactive game board.
 
 ---
