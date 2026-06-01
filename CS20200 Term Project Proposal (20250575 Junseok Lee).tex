@@ -1,0 +1,80 @@
+\documentclass{article}
+
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{CS20200 Term Project Proposal}
+\rhead{Quoridor}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{CS20200 Term Project Proposal}
+\author{Junseok Lee}
+\date{20250575}
+
+\begin{document}
+\thispagestyle{fancy}
+\begin{center}
+    {\LARGE Quoridor}\\[1em]
+    \textbf{Author:} Junseok Lee \quad
+    \textbf{Student ID:} 20250575
+\end{center}
+\vspace{0.8em}
+\hrule
+\vspace{1.2em}
+\section{Project Title}
+{\large\bfseries Quoridor}
+
+\section{Overview}
+This project is a two-player Quoridor game where the user plays against a computer-controlled AI opponent.
+The game is played on a $9\times 9$ board.
+The user starts at the center of the bottom row, and the AI starts at the center of the top row.
+
+On each turn, a player can either move their pawn or place a wall. A wall blocks a pawn from moving between cells.
+Each player can use at most 10 walls and it cannot be placed either player is impossible to reach the goal row.
+The user wins by reaching the top row, and the AI wins by reaching the bottom row.
+
+\section{Requirements}
+\begin{enumerate}
+	\item The game will use a $9\times 9$ board.
+	\item The user will control one pawn, and the AI will control one pawn.
+	\item The user's pawn will start at the center cell of the bottom row.
+	\item The AI's pawn will start at the center cell of the top row.
+	\item The user wins if the user's pawn reaches any cell in the top row.
+	\item The user loses if the AI's pawn reaches any cell in the bottom row.
+	\item The user and the AI will take turns.
+	\item The user will move first.
+	\item On each turn, a player can either move their pawn or place a wall.
+	\item On the user's turn, the game will wait for the user to choose a valid action.
+	\item After each turn, the game displays the updated board, both pawns, existing walls, remaining wall counts, and whose turn it is.
+	\item Board coordinates use zero-based indexing.
+	\item The user pawn will be shown as $\bullet$, the computer pawn as $\circ$, empty cells as $\cdot$, and walls as vertical and horizontal lines.
+	\item A user can enter \texttt{move up}, \texttt{move down}, \texttt{move left}, \texttt{move right} to move one cell orthogonally.
+	\item A user can enter \texttt{move up-left}, \texttt{move up-right}, \texttt{move down-left}, and \texttt{move down-right} if a diagonal move is allowed.
+	\item The user can enter \texttt{wall H r c} or \texttt{wall V r c} to place a wall.
+	\item A horizontal wall \texttt{wall H r c} can use $0 \le r \le 7$ and $0 \le c \le 7$. It places a horizontal wall that blocks movement between $(r,c)$ and $(r+1,c)$, and also between $(r,c+1)$ and $(r+1,c+1)$.
+	\item A vertical wall \texttt{wall V r c} can use $0 \le r \le 7$ and $0 \le c \le 7$. It places a vertical wall that blocks movement between $(r,c)$ and $(r,c+1)$, and also between $(r+1,c)$ and $(r+1,c+1)$.
+	\item If the user attempts an invalid action, the game will display an error message and ask for a valid move again.
+	\item The computer always perform a valid action.
+	\item After every turn, the game checks whether a player has reached their goal row.
+	\item The user can quit during the user's turn.
+	\item A normal pawn move moves the pawn to one orthogonally adjacent cell: up, down, left, or right.
+	\item A pawn move is valid only if the destination cell is not occupied by the opponent pawn.
+	\item A pawn move is valid only if there is no wall between the current cell and the destination cell.
+	\item If the opponent pawn is orthogonally adjacent and no wall is between the two pawns, the current player can jump over the opponent pawn if the cell directly behind the opponent is not blocked by a wall.
+	\item If the opponent pawn is orthogonally adjacent and no wall is between the two pawns, and if the direct jump move is blocked by a wall or the board edge, the current player can move diagonally to a cell orthogonally adjacent to the opponent pawn, only if no wall blocks the opponent pawn from that diagonal destination.
+	\item A wall can be placed horizontally or vertically.
+	\item Each player can place at most 10 walls.
+	\item A wall occupies two consecutive edges between cells.
+	\item A wall cannot overlap or cross an existing wall.
+	\item A wall placement is valid if both player have at least one possible path to reach their goal row after the wall is placed.
+\end{enumerate}
+
+\section{Example Interaction}
+
+The game displays the initial board with the user pawn, the opponent pawn, empty cells, existing walls, and remaining wall counts. The user enters \texttt{move up}. If the move is valid, the game moves the user pawn one cell upward and displays the updated board. Then the AI chooses one valid action, such as moving one cell toward its goal row or placing a legal wall. The game displays the AI's action, the updated board, and asks the user for the next action.
+
+For another example, the user enters \texttt{wall H 3 4}. If this wall placement is valid, the game places a horizontal wall at row 3, column 4, decreases the user's remaining wall count by 1, and displays the updated board. Then, the AI performs one valid action. The game then displays the AI's action, the updated board, and asks the user for the next action.
+
+\end{document}
